@@ -24,6 +24,11 @@
   const unsupportedBanner = $('unsupportedBanner');
   const permissionBanner = $('permissionBanner');
   const micMeterFill = $('micMeterFill');
+  const voiceDot = $('voiceDot');
+  const micMeterEl = document.querySelector('.mic-meter');
+
+  const VOICE_THRESHOLD = 0.15;
+  const VOICE_HOLD_MS = 250;
 
   const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
   const speechSupported = !!SpeechRecognitionImpl;
@@ -50,6 +55,7 @@
   let sourceNode = null;
   let analyserNode = null;
   let meterRAF = null;
+  let lastVoiceDetectedAt = 0;
   let processorNode = null;
   let silentGain = null;
   let pcmChunks = [];
@@ -222,6 +228,13 @@
       const rms = Math.sqrt(sumSquares / data.length);
       const level = Math.min(1, rms * 4);
       micMeterFill.style.width = `${Math.round(level * 100)}%`;
+
+      const now = Date.now();
+      if (level > VOICE_THRESHOLD) lastVoiceDetectedAt = now;
+      const voiceActive = now - lastVoiceDetectedAt < VOICE_HOLD_MS;
+      voiceDot.classList.toggle('active', voiceActive);
+      micMeterEl.classList.toggle('voice-active', voiceActive);
+
       meterRAF = requestAnimationFrame(tick);
     };
     tick();
@@ -238,6 +251,9 @@
       mediaStream = null;
     }
     micMeterFill.style.width = '0%';
+    voiceDot.classList.remove('active');
+    micMeterEl.classList.remove('voice-active');
+    lastVoiceDetectedAt = 0;
   }
 
   // ---------- Recording: PCM capture -> MP3 encoding (lamejs), auto-split ----------

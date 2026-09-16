@@ -160,6 +160,27 @@ body {
   gap: 8px;
   margin-top: 6px;
 }
+.voice-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3a4560;
+  flex-shrink: 0;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.voice-dot.active {
+  background: var(--ok);
+  animation: voice-pulse 0.7s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0% { box-shadow: 0 0 4px 1px rgba(53, 208, 143, 0.6); }
+  50% { box-shadow: 0 0 14px 6px rgba(53, 208, 143, 0.9); }
+  100% { box-shadow: 0 0 4px 1px rgba(53, 208, 143, 0.6); }
+}
+.mic-meter.voice-active {
+  border-color: var(--ok);
+  box-shadow: 0 0 8px 1px rgba(53, 208, 143, 0.5);
+}
 .mic-meter-label {
   font-size: 0.78rem;
   color: var(--text-dim);
