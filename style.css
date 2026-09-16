@@ -235,6 +235,13 @@ body {
   gap: 6px;
 }
 
+.field-note {
+  font-size: 0.75rem;
+  color: var(--warn);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
 select, input[type="text"] {
   width: 100%;
   padding: 8px;

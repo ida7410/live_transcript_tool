@@ -10,6 +10,7 @@
   const recordStatus = $('recordStatus');
   const micSelect = $('micSelect');
   const refreshMicsBtn = $('refreshMicsBtn');
+  const micDeviceNote = $('micDeviceNote');
   const chunkDurationSelect = $('chunkDuration');
   const timestampToggle = $('timestampToggle');
   const transcriptArea = $('transcriptArea');
@@ -184,6 +185,10 @@
       setStatus(liveStatus, true, 'Live: listening');
     } catch (e) {
       console.error(e);
+      showBanner(`Could not start live transcription (${e.message || e.name || 'unknown error'}). Try clicking Start again.`);
+      recognitionShouldRun = false;
+      setStatus(liveStatus, false, 'Live: failed to start');
+      syncUiToState();
     }
   }
 
@@ -504,6 +509,9 @@
   stopBtn.addEventListener('click', handleStop);
   splitNowBtn.addEventListener('click', splitNow);
   refreshMicsBtn.addEventListener('click', refreshMicList);
+  micSelect.addEventListener('change', () => {
+    micDeviceNote.classList.toggle('hidden', !micSelect.value);
+  });
   copyBtn.addEventListener('click', copyTranscript);
   saveTxtBtn.addEventListener('click', saveTranscriptTxt);
   clearTranscriptBtn.addEventListener('click', () => {
