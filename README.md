@@ -7,9 +7,10 @@ copy them.
 
 ## Features
 
-1. **Live transcript (English only)** — real-time speech-to-text using the
-   browser's Web Speech API (`en-US`), with automatic restart so long
-   sessions keep transcribing.
+1. **Live transcript (English only)** — real-time speech-to-text, with two
+   selectable engines (see below): the browser's built-in Web Speech API,
+   or a local, in-browser AI model (Vosk) that can listen through whichever
+   microphone you pick.
 2. **Auto-split recording** — records microphone audio and automatically
    cuts it into separate files at a configurable interval (1–30 minutes, or
    manually via "Split file now"), so you can hand the resulting files to an
@@ -33,53 +34,73 @@ python3 -m http.server 8080
 
 Then open the printed URL (e.g. `http://localhost:8080`) in Chrome or Edge.
 
-## Browser support
+## Live transcript engines
 
-- **Live transcription** uses the Web Speech API (`SpeechRecognition`).
-  It only works in **official Google Chrome or Microsoft Edge** — under the
-  hood it streams audio to a cloud speech service that's tied to a
-  proprietary API key baked into those specific builds. Open-source
-  Chromium, Brave, and other Chromium forks look identical but do **not**
-  have that key, so recognition fails immediately (usually surfaced here as
-  "no mic" or a similar error). Firefox and Safari don't support the API at
-  all. In any of these cases, recording still works — only the live
-  transcript panel is affected.
-- Because live transcription depends on that cloud service, it also
-  **requires an active internet connection**, even though the page itself
-  is fully local.
-- **Recording** uses the Web Audio API plus a bundled MP3 encoder
-  (`vendor/lame.min.js`) and works in all modern browsers, fully offline.
-- The app must be served over `https://` (or `http://localhost`) for
-  microphone access to be granted — opening `index.html` directly via
-  `file://` will not work.
+Pick the engine in Settings → "Live transcript engine":
+
+- **Browser built-in** (default) — uses the Web Speech API
+  (`SpeechRecognition`). Fast and quite accurate, but comes with two hard
+  platform limitations that no amount of app-side code can work around:
+  - It only works in **official Google Chrome or Microsoft Edge** — under
+    the hood it streams audio to a cloud speech service tied to a
+    proprietary API key baked into those specific builds. Open-source
+    Chromium, Brave, and other Chromium forks look identical but do
+    **not** have that key, so recognition fails immediately. Firefox and
+    Safari don't support the API at all.
+  - It **always listens on your OS's default microphone** and gives web
+    pages no way to target a different device — so the Microphone dropdown
+    in this app is disabled while this engine is selected in "Live
+    transcript only" mode, since it would have no effect.
+  - Because it depends on that cloud service, it also **requires an active
+    internet connection**, even though the page itself is fully local.
+- **Local AI model (beta)** — runs [Vosk](https://alphacephei.com/vosk/)
+  entirely inside your browser via WebAssembly (bundled as
+  `vendor/vosk.js`), processing audio from whichever mic you pick in the
+  dropdown — including in "Live transcript only" mode. Trade-offs:
+  - The first time you click Start with this engine, it downloads a speech
+    model (~40MB, English) from the URL in Settings → Advanced → "local AI
+    model URL"; after that it's cached by the browser and runs fully
+    offline. This needs an internet connection *once*.
+  - Noticeably less accurate than the browser's built-in engine, and adds
+    a short delay before each phrase is finalized.
+  - The default model URL points at a third-party demo host
+    (`ccoreilly.github.io`). If it's slow, blocked on your network, or
+    goes offline, host your own copy of a Vosk model (packaged as
+    `.tar.gz`, see [vosk-browser's model
+    docs](https://github.com/ccoreilly/vosk-browser)) and paste its URL
+    into that same field.
+
+In either case, **recording** uses the Web Audio API plus a bundled MP3
+encoder (`vendor/lame.min.js`) and works in all modern browsers, fully
+offline, using whichever mic you pick in the dropdown.
+
+The app must be served over `https://` (or `http://localhost`) for
+microphone access to be granted — opening `index.html` directly via
+`file://` will not work.
 
 ### If live transcript "doesn't detect your voice"
 
-1. Confirm you're on real Chrome or Edge (see above) and check the address
-   bar for a blocked microphone icon.
-2. Click Start, then watch the **"Mic input" meter and glowing dot** in the
+1. Click Start, then watch the **"Mic input" meter and glowing dot** in the
    Controls panel while you speak.
    - If it **never** lights up, the browser isn't receiving any audio at
      all — check the Microphone dropdown and your OS's privacy/sound
      settings, or that the mic is muted/unplugged.
    - If it **does** light up but the transcript still shows "listening (no
-     speech detected yet)": the Web Speech API used for live transcription
-     has **no way to target a specific input device** — it always listens
-     on whatever your **operating system's default microphone** is,
-     completely ignoring the Microphone dropdown in this app (that
-     dropdown only controls which device gets *recorded*). If the mic
-     you're actually speaking into isn't your OS default input device,
-     live transcript will hear silence even though the meter reacts fine.
-     Fix it by making your mic the system default:
+     speech detected yet)" and you're using the **browser built-in**
+     engine: your OS's default microphone isn't the one you're speaking
+     into (see the hard limitation above). Either switch the engine to
+     **Local AI model** (which respects the Microphone dropdown), or make
+     your actual mic the OS default:
      - **Windows**: Settings → System → Sound → Input → set your mic as default
      - **macOS**: System Settings → Sound → Input → select your mic
      - **Linux**: e.g. `pavucontrol` → Input Devices, or your desktop's
        Sound settings
-     Once that's done, live transcript should pick it up (the dropdown
-     can stay on "Default microphone" at that point, since it'll now match).
-3. Any other failure is surfaced as a banner message at the top of the
-   page (blocked permission, no mic found, network error, etc.) instead of
-   failing silently.
+   - Also confirm you're on real Chrome or Edge if using the built-in
+     engine (see above), and check the address bar for a blocked
+     microphone icon.
+2. Any other failure is surfaced as a banner message at the top of the
+   page (blocked permission, no mic found, network error, model failed to
+   download, etc.) instead of failing silently.
 
 ## Deployment
 
@@ -96,3 +117,13 @@ client-side with a bundled build of the LAME encoder
 `vendor/LAME-LICENSE.txt`). Everything happens locally in the browser; no
 audio is uploaded anywhere by this app. `.zip` export uses a vendored copy
 of JSZip (`vendor/jszip.min.js`, MIT).
+
+## Third-party components
+
+- `vendor/lame.min.js` — LAME MP3 encoder (via `lamejs`), LGPL. See
+  `vendor/LAME-LICENSE.txt`.
+- `vendor/jszip.min.js` — JSZip, MIT.
+- `vendor/vosk.js` — [vosk-browser](https://github.com/ccoreilly/vosk-browser),
+  Apache-2.0, a WebAssembly build of [Vosk](https://alphacephei.com/vosk/).
+  The speech model it loads at runtime (not included in this repo, fetched
+  from the URL in Settings) is also Apache-2.0.

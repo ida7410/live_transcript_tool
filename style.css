@@ -214,6 +214,16 @@ body {
   margin-bottom: 10px;
 }
 
+.nested-settings {
+  margin: -4px 0 14px;
+}
+.nested-settings summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
 .field {
   margin-bottom: 12px;
 }
