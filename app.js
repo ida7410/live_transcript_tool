@@ -23,12 +23,14 @@
   const clearFilesBtn = $('clearFilesBtn');
   const unsupportedBanner = $('unsupportedBanner');
   const permissionBanner = $('permissionBanner');
+  const micMeterFill = $('micMeterFill');
 
   const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
   const speechSupported = !!SpeechRecognitionImpl;
-  const recorderSupported = !!(navigator.mediaDevices && window.MediaRecorder);
+  const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
+  const recordingSupported = !!(navigator.mediaDevices && AudioContextImpl && typeof lamejs !== 'undefined');
 
-  if (!speechSupported && !recorderSupported) {
+  if (!speechSupported && !recordingSupported) {
     unsupportedBanner.textContent = 'This browser supports neither live transcription nor audio recording. Please use a recent Chrome or Edge.';
     unsupportedBanner.classList.remove('hidden');
   } else if (!speechSupported) {
@@ -41,17 +43,23 @@
   let recognition = null;
   let recognitionShouldRun = false;
   let sessionStartTime = null;
+  let noSpeechStreak = 0;
 
   let mediaStream = null;
-  let mediaRecorder = null;
-  let currentChunkBlobs = [];
-  let recordedFiles = []; // {name, blob, url, size, duration}
+  let audioCtx = null;
+  let sourceNode = null;
+  let analyserNode = null;
+  let meterRAF = null;
+  let processorNode = null;
+  let silentGain = null;
+  let pcmChunks = [];
   let chunkTimer = null;
   let countdownTimer = null;
   let chunkIndex = 0;
   let chunkStartTime = null;
   let chunkDeadline = null;
   let isRecordingActive = false;
+  let recordedFiles = []; // {name, blob, url, size, duration}
 
   // ---------- Helpers ----------
   function pad(n) { return String(n).padStart(2, '0'); }
@@ -79,6 +87,15 @@
     el.innerHTML = `<span class="dot"></span> ${label}`;
   }
 
+  function showBanner(message) {
+    permissionBanner.textContent = message;
+    permissionBanner.classList.remove('hidden');
+  }
+
+  function hideBanner() {
+    permissionBanner.classList.add('hidden');
+  }
+
   function appendTranscriptLine(text) {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -98,6 +115,7 @@
     rec.interimResults = true;
 
     rec.onresult = (event) => {
+      noSpeechStreak = 0;
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
@@ -108,15 +126,34 @@
         }
       }
       interimIndicator.textContent = interim ? `listening: "${interim}"` : '';
+      setStatus(liveStatus, true, 'Live: listening');
     };
 
     rec.onerror = (event) => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        permissionBanner.classList.remove('hidden');
+        showBanner('Microphone access was blocked for live transcription. Allow microphone access in your browser (check the icon in the address bar) and click Start again.');
         recognitionShouldRun = false;
+        setStatus(liveStatus, false, 'Live: mic blocked');
         syncUiToState();
+      } else if (event.error === 'audio-capture') {
+        showBanner('No microphone was found for live transcription. Check that a mic is connected and selected in Settings, then try again.');
+        recognitionShouldRun = false;
+        setStatus(liveStatus, false, 'Live: no mic');
+        syncUiToState();
+      } else if (event.error === 'network') {
+        showBanner('Live transcription needs an internet connection (your browser sends audio to a cloud speech service to transcribe it). Check your connection and try again.');
+        setStatus(liveStatus, false, 'Live: network error');
+      } else if (event.error === 'no-speech') {
+        noSpeechStreak += 1;
+        setStatus(liveStatus, true, 'Live: listening (no speech detected yet)');
+        if (noSpeechStreak >= 3) {
+          showBanner('Live transcription is running but has not detected any speech yet. Check the "Mic input" meter below — if it never moves when you talk, the browser is not receiving audio from this microphone (try a different one in Settings).');
+        }
+      } else if (event.error === 'aborted') {
+        // Expected when we call recognition.stop() ourselves; ignore.
+      } else {
+        setStatus(liveStatus, true, `Live: error (${event.error})`);
       }
-      // 'no-speech' and similar are transient; onend will restart us if needed.
     };
 
     rec.onend = () => {
@@ -133,7 +170,7 @@
 
   function startLive() {
     if (!speechSupported) return;
-    permissionBanner.classList.add('hidden');
+    noSpeechStreak = 0;
     recognitionShouldRun = true;
     recognition = createRecognition();
     try {
@@ -153,65 +190,88 @@
     setStatus(liveStatus, false, 'Live: idle');
   }
 
-  // ---------- Recording (auto-split files) ----------
-  function pickSupportedMimeType() {
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/ogg;codecs=opus',
-    ];
-    for (const type of candidates) {
-      if (window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
-    }
-    return '';
-  }
-
-  function extForMime(mime) {
-    if (mime.includes('mp4')) return 'm4a';
-    if (mime.includes('ogg')) return 'ogg';
-    return 'webm';
-  }
-
-  async function startRecording() {
-    if (!recorderSupported) return;
-    permissionBanner.classList.add('hidden');
+  // ---------- Mic acquisition + level meter ----------
+  async function acquireStream() {
     const deviceId = micSelect.value || undefined;
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: deviceId ? { deviceId: { exact: deviceId } } : true,
     });
     await refreshMicList(); // labels become available after permission grant
-    isRecordingActive = true;
-    chunkIndex = 0;
-    startNewChunkRecorder();
-    setStatus(recordStatus, true, 'Recording: active');
-    splitNowBtn.disabled = false;
+    setupAudioGraph();
   }
 
-  function startNewChunkRecorder() {
-    currentChunkBlobs = [];
-    chunkStartTime = Date.now();
-    const mimeType = pickSupportedMimeType();
-    mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : undefined);
+  function setupAudioGraph() {
+    audioCtx = new AudioContextImpl();
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    analyserNode = audioCtx.createAnalyser();
+    analyserNode.fftSize = 512;
+    sourceNode.connect(analyserNode);
+    startMeterLoop();
+  }
 
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) currentChunkBlobs.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-      finalizeChunk(mediaRecorder.mimeType || mimeType || 'audio/webm');
-      if (isRecordingActive) {
-        startNewChunkRecorder();
-      } else {
-        chunkCountdownEl.textContent = '';
+  function startMeterLoop() {
+    const data = new Uint8Array(analyserNode.fftSize);
+    const tick = () => {
+      if (!analyserNode) return;
+      analyserNode.getByteTimeDomainData(data);
+      let sumSquares = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sumSquares += v * v;
       }
+      const rms = Math.sqrt(sumSquares / data.length);
+      const level = Math.min(1, rms * 4);
+      micMeterFill.style.width = `${Math.round(level * 100)}%`;
+      meterRAF = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function stopMeterAndStream() {
+    if (meterRAF) cancelAnimationFrame(meterRAF);
+    meterRAF = null;
+    if (sourceNode) { try { sourceNode.disconnect(); } catch (e) {} sourceNode = null; }
+    if (analyserNode) { try { analyserNode.disconnect(); } catch (e) {} analyserNode = null; }
+    if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((t) => t.stop());
+      mediaStream = null;
+    }
+    micMeterFill.style.width = '0%';
+  }
+
+  // ---------- Recording: PCM capture -> MP3 encoding (lamejs), auto-split ----------
+  function floatTo16BitPCM(float32Array) {
+    const out = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return out;
+  }
+
+  function startAudioRecording() {
+    isRecordingActive = true;
+    chunkIndex = 0;
+    pcmChunks = [];
+    chunkStartTime = Date.now();
+
+    processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+    silentGain = audioCtx.createGain();
+    silentGain.gain.value = 0; // avoid audible feedback while still driving the processor
+    sourceNode.connect(processorNode);
+    processorNode.connect(silentGain);
+    silentGain.connect(audioCtx.destination);
+
+    processorNode.onaudioprocess = (e) => {
+      if (!isRecordingActive) return;
+      pcmChunks.push(floatTo16BitPCM(e.inputBuffer.getChannelData(0)));
     };
 
-    mediaRecorder.start();
     chunkIndex += 1;
     scheduleChunkSplit();
+    setStatus(recordStatus, true, 'Recording: active');
+    splitNowBtn.disabled = false;
   }
 
   function scheduleChunkSplit() {
@@ -221,11 +281,7 @@
     const durationMs = minutes * 60 * 1000;
     chunkDeadline = Date.now() + durationMs;
 
-    chunkTimer = setTimeout(() => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-      }
-    }, durationMs);
+    chunkTimer = setTimeout(() => splitNow(), durationMs);
 
     countdownTimer = setInterval(() => {
       const remaining = Math.max(0, chunkDeadline - Date.now());
@@ -233,36 +289,54 @@
     }, 500);
   }
 
-  function finalizeChunk(mimeType) {
-    if (currentChunkBlobs.length === 0) return;
-    const blob = new Blob(currentChunkBlobs, { type: mimeType });
-    const durationSec = Math.round((Date.now() - chunkStartTime) / 1000);
-    const ext = extForMime(mimeType);
-    const name = `recording_${formatFileTimestamp(new Date(chunkStartTime))}_part${pad(chunkIndex)}.${ext}`;
+  function finalizeChunkToMp3() {
+    if (pcmChunks.length === 0) return;
+    const sampleRate = audioCtx.sampleRate;
+    const encoder = new lamejs.Mp3Encoder(1, sampleRate, 128);
+    const mp3Parts = [];
+    for (const chunk of pcmChunks) {
+      const enc = encoder.encodeBuffer(chunk);
+      if (enc.length > 0) mp3Parts.push(new Uint8Array(enc));
+    }
+    const end = encoder.flush();
+    if (end.length > 0) mp3Parts.push(new Uint8Array(end));
+
+    const totalSamples = pcmChunks.reduce((n, c) => n + c.length, 0);
+    const durationSec = Math.round(totalSamples / sampleRate);
+    const blob = new Blob(mp3Parts, { type: 'audio/mpeg' });
+    const name = `recording_${formatFileTimestamp(new Date(chunkStartTime))}_part${pad(chunkIndex)}.mp3`;
     const url = URL.createObjectURL(blob);
     recordedFiles.push({ name, blob, url, size: blob.size, duration: durationSec });
     renderFileList();
   }
 
   function splitNow() {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-    }
+    if (!isRecordingActive) return;
+    finalizeChunkToMp3();
+    chunkIndex += 1;
+    chunkStartTime = Date.now();
+    pcmChunks = [];
+    scheduleChunkSplit();
   }
 
   function stopRecording() {
+    if (!isRecordingActive) {
+      clearTimeout(chunkTimer);
+      clearInterval(countdownTimer);
+      return;
+    }
     isRecordingActive = false;
     splitNowBtn.disabled = true;
     clearTimeout(chunkTimer);
     clearInterval(countdownTimer);
     chunkCountdownEl.textContent = '';
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
+    finalizeChunkToMp3();
+    if (processorNode) {
+      processorNode.onaudioprocess = null;
+      try { processorNode.disconnect(); } catch (e) {}
+      processorNode = null;
     }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop());
-      mediaStream = null;
-    }
+    if (silentGain) { try { silentGain.disconnect(); } catch (e) {} silentGain = null; }
     setStatus(recordStatus, false, 'Recording: idle');
   }
 
@@ -363,28 +437,41 @@
   async function handleStart() {
     mode = document.querySelector('input[name="mode"]:checked').value;
     sessionStartTime = Date.now();
+    hideBanner();
     try {
+      try {
+        await acquireStream();
+      } catch (streamErr) {
+        if (mode === 'record' || mode === 'both') throw streamErr;
+        console.warn('Mic level meter unavailable (live transcript can still work):', streamErr);
+      }
+
       if (mode === 'live' || mode === 'both') {
         if (!speechSupported) {
-          alert('Live transcription is not supported in this browser.');
+          alert('Live transcription is not supported in this browser. Try Chrome or Edge.');
         } else {
           startLive();
         }
       }
       if (mode === 'record' || mode === 'both') {
-        if (!recorderSupported) {
+        if (!recordingSupported) {
           alert('Audio recording is not supported in this browser.');
         } else {
-          await startRecording();
+          startAudioRecording();
         }
       }
     } catch (err) {
       console.error(err);
       if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
-        permissionBanner.classList.remove('hidden');
+        showBanner('Microphone permission was denied. Allow microphone access for this site and click Start again.');
+      } else if (err && err.name === 'NotFoundError') {
+        showBanner('No microphone was found. Connect a microphone and click Start again.');
+      } else {
+        showBanner('Could not access the microphone. Check your browser and OS microphone permissions and try again.');
       }
       stopLive();
       stopRecording();
+      stopMeterAndStream();
     }
     syncUiToState();
   }
@@ -392,6 +479,7 @@
   function handleStop() {
     stopLive();
     stopRecording();
+    stopMeterAndStream();
     syncUiToState();
   }
 
@@ -427,7 +515,7 @@
   refreshMicList();
   renderFileList();
   syncUiToState();
-  if (!recorderSupported) {
+  if (!recordingSupported) {
     document.querySelector('input[name="mode"][value="record"]').disabled = true;
     document.querySelector('input[name="mode"][value="both"]').disabled = true;
   }

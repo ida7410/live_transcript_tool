@@ -154,6 +154,33 @@ body {
 .status-pill.active .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .status-pill.active { color: var(--text); }
 
+.mic-meter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.mic-meter-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  width: 62px;
+  flex-shrink: 0;
+}
+.mic-meter {
+  flex: 1;
+  height: 8px;
+  background: #0c1220;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.mic-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--ok), var(--warn));
+  transition: width 0.08s linear;
+}
+
 .settings {
   margin-top: 16px;
   border-top: 1px solid var(--panel-border);

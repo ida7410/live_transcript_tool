@@ -40,6 +40,10 @@
       <div class="status-row">
         <span class="status-pill" id="liveStatus"><span class="dot"></span> Live: idle</span>
         <span class="status-pill" id="recordStatus"><span class="dot"></span> Recording: idle</span>
+        <div class="mic-meter-wrap" title="Moves when the browser is picking up mic input, regardless of transcription/recording state">
+          <span class="mic-meter-label">Mic input</span>
+          <div class="mic-meter"><div class="mic-meter-fill" id="micMeterFill"></div></div>
+        </div>
       </div>
 
       <details class="settings" open>
@@ -91,7 +95,7 @@
         <h2>Recorded Files</h2>
         <span id="chunkCountdown" class="chunk-countdown"></span>
       </div>
-      <p class="hint">Audio is automatically split into separate files so you can send them to an AI transcription/summary service.</p>
+      <p class="hint">Audio is recorded as .mp3 and automatically split into separate files so you can send them to an AI transcription/summary service.</p>
       <ul id="fileList" class="file-list"></ul>
       <div class="control-row">
         <button id="downloadAllBtn" class="btn btn-secondary" disabled>⬇ Download all as .zip</button>
@@ -107,7 +111,8 @@
 
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/lame.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

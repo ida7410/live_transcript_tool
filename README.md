@@ -35,13 +35,38 @@ Then open the printed URL (e.g. `http://localhost:8080`) in Chrome or Edge.
 
 ## Browser support
 
-- **Live transcription** uses the Web Speech API (`SpeechRecognition`),
-  which is supported in Chrome and Edge. Firefox and Safari currently lack
-  reliable support — in those browsers, recording still works, but the live
-  transcript panel will be disabled.
-- **Recording** uses `MediaRecorder` and works in all modern browsers.
+- **Live transcription** uses the Web Speech API (`SpeechRecognition`).
+  It only works in **official Google Chrome or Microsoft Edge** — under the
+  hood it streams audio to a cloud speech service that's tied to a
+  proprietary API key baked into those specific builds. Open-source
+  Chromium, Brave, and other Chromium forks look identical but do **not**
+  have that key, so recognition fails immediately (usually surfaced here as
+  "no mic" or a similar error). Firefox and Safari don't support the API at
+  all. In any of these cases, recording still works — only the live
+  transcript panel is affected.
+- Because live transcription depends on that cloud service, it also
+  **requires an active internet connection**, even though the page itself
+  is fully local.
+- **Recording** uses the Web Audio API plus a bundled MP3 encoder
+  (`vendor/lame.min.js`) and works in all modern browsers, fully offline.
 - The app must be served over `https://` (or `http://localhost`) for
-  microphone access to be granted.
+  microphone access to be granted — opening `index.html` directly via
+  `file://` will not work.
+
+### If live transcript "doesn't detect your voice"
+
+1. Confirm you're on real Chrome or Edge (see above) and check the address
+   bar for a blocked microphone icon.
+2. Click Start, then watch the **"Mic input" meter** in the Controls panel
+   while you speak. If it moves, the browser is receiving audio — the
+   problem is the speech service (check your internet connection, or a
+   banner should appear after a few seconds of silence with more detail).
+   If it never moves, the wrong microphone is likely selected, or the OS
+   is blocking mic access for the browser — check the Microphone dropdown
+   and your system's privacy/sound settings.
+3. Any failure is now also surfaced as a banner message at the top of the
+   page (blocked permission, no mic found, network error, etc.) instead of
+   failing silently.
 
 ## Deployment
 
@@ -51,7 +76,10 @@ Vercel, Cloudflare Pages, S3 + CloudFront, etc. Just upload the three files.
 
 ## Notes on file formats
 
-Recorded chunks are saved as `.webm` (or `.m4a`/`.ogg` depending on browser
-codec support) rather than `.mp3`, since that's what browsers can encode
-natively without extra libraries. Most AI transcription services (e.g.
-Whisper-based tools) accept these formats directly.
+Recorded chunks are saved as `.mp3`. Browsers can't encode MP3 natively, so
+the app captures raw PCM audio via the Web Audio API and encodes it
+client-side with a bundled build of the LAME encoder
+(`vendor/lame.min.js`, from the `lamejs` project, LGPL — see
+`vendor/LAME-LICENSE.txt`). Everything happens locally in the browser; no
+audio is uploaded anywhere by this app. `.zip` export uses a vendored copy
+of JSZip (`vendor/jszip.min.js`, MIT).
