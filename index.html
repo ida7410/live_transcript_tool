@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Transcript Tool</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="app-header">
+    <h1>🎙️ Live Transcript Tool</h1>
+    <p class="subtitle">Live English transcription, auto-split audio recording, and one-click transcript export.</p>
+  </header>
+
+  <div id="unsupportedBanner" class="banner banner-warn hidden"></div>
+  <div id="permissionBanner" class="banner banner-info hidden">Microphone permission is required. Click "Start" and allow access when prompted.</div>
+
+  <main class="layout">
+
+    <!-- Controls -->
+    <section class="panel controls-panel">
+      <h2>Controls</h2>
+
+      <fieldset class="mode-select">
+        <legend>Mode</legend>
+        <label><input type="radio" name="mode" value="live" checked> Live transcript only</label>
+        <label><input type="radio" name="mode" value="record"> Record audio only</label>
+        <label><input type="radio" name="mode" value="both"> Live + Record (both at once)</label>
+      </fieldset>
+
+      <div class="control-row">
+        <button id="startBtn" class="btn btn-primary">▶ Start</button>
+        <button id="stopBtn" class="btn btn-danger" disabled>■ Stop</button>
+        <button id="splitNowBtn" class="btn btn-secondary" disabled title="Manually cut the current audio file now">✂ Split file now</button>
+      </div>
+
+      <div class="status-row">
+        <span class="status-pill" id="liveStatus"><span class="dot"></span> Live: idle</span>
+        <span class="status-pill" id="recordStatus"><span class="dot"></span> Recording: idle</span>
+      </div>
+
+      <details class="settings" open>
+        <summary>Settings</summary>
+
+        <div class="field">
+          <label for="micSelect">Microphone</label>
+          <div class="inline-field">
+            <select id="micSelect"><option value="">Default microphone</option></select>
+            <button id="refreshMicsBtn" class="btn btn-small">⟳</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="chunkDuration">Auto-split recording every</label>
+          <select id="chunkDuration">
+            <option value="1">1 minute</option>
+            <option value="2">2 minutes</option>
+            <option value="5" selected>5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+          </select>
+        </div>
+
+        <div class="field checkbox-field">
+          <label><input type="checkbox" id="timestampToggle"> Prefix transcript lines with timestamps</label>
+        </div>
+      </details>
+    </section>
+
+    <!-- Transcript -->
+    <section class="panel transcript-panel">
+      <div class="panel-header-row">
+        <h2>Transcript (English)</h2>
+        <span id="interimIndicator" class="interim-indicator"></span>
+      </div>
+      <textarea id="transcriptArea" placeholder="Your live transcript will appear here. You can also type or edit text directly."></textarea>
+      <div class="control-row">
+        <button id="copyBtn" class="btn btn-secondary">📋 Copy</button>
+        <button id="saveTxtBtn" class="btn btn-secondary">💾 Save as .txt</button>
+        <button id="clearTranscriptBtn" class="btn btn-ghost">🗑 Clear</button>
+      </div>
+    </section>
+
+    <!-- Recorded files -->
+    <section class="panel files-panel">
+      <div class="panel-header-row">
+        <h2>Recorded Files</h2>
+        <span id="chunkCountdown" class="chunk-countdown"></span>
+      </div>
+      <p class="hint">Audio is automatically split into separate files so you can send them to an AI transcription/summary service.</p>
+      <ul id="fileList" class="file-list"></ul>
+      <div class="control-row">
+        <button id="downloadAllBtn" class="btn btn-secondary" disabled>⬇ Download all as .zip</button>
+        <button id="clearFilesBtn" class="btn btn-ghost" disabled>🗑 Clear list</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <p>Runs entirely in your browser — audio and transcript never leave your device unless you download or copy them yourself. Live transcription works best in Chrome or Edge.</p>
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
