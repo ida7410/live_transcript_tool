@@ -87,14 +87,25 @@ microphone access to be granted — opening `index.html` directly via
      settings, or that the mic is muted/unplugged.
    - If it **does** light up but the transcript still shows "listening (no
      speech detected yet)" and you're using the **browser built-in**
-     engine: your OS's default microphone isn't the one you're speaking
-     into (see the hard limitation above). Either switch the engine to
-     **Local AI model** (which respects the Microphone dropdown), or make
-     your actual mic the OS default:
-     - **Windows**: Settings → System → Sound → Input → set your mic as default
-     - **macOS**: System Settings → Sound → Input → select your mic
-     - **Linux**: e.g. `pavucontrol` → Input Devices, or your desktop's
-       Sound settings
+     engine: the mic it's actually listening to isn't the one you're
+     speaking into (see the hard limitation above). There are **three
+     independent places** a "default" microphone gets decided, and any one
+     of them can be the culprit — check all three, not just one:
+     1. **Chrome's own mic setting**, separate from the OS entirely:
+        `chrome://settings/content/microphone` (or click the icon left of
+        the address bar → Microphone). Chrome can have its own default
+        pinned here that overrides everything else.
+     2. **The OS default *and* default communications device** — Windows
+        exposes these as two separate roles that can point at different
+        devices (Settings → System → Sound → Input on Windows 11; on
+        Windows 10/11 you can also press Win+R → `mmsys.cpl` →
+        Recording tab → right-click a device → "Set as Default Device" /
+        "Set as Default Communication Device"). macOS: System Settings →
+        Sound → Input. Linux: e.g. `pavucontrol` → Input Devices.
+     3. As a fallback that sidesteps all of the above, switch the engine
+        to **Local AI model**, which listens through whichever device is
+        explicitly picked in this app's own Microphone dropdown, ignoring
+        every OS/Chrome-level "default" setting.
    - Also confirm you're on real Chrome or Edge if using the built-in
      engine (see above), and check the address bar for a blocked
      microphone icon.
