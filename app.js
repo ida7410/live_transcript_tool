@@ -509,9 +509,27 @@
   stopBtn.addEventListener('click', handleStop);
   splitNowBtn.addEventListener('click', splitNow);
   refreshMicsBtn.addEventListener('click', refreshMicList);
-  micSelect.addEventListener('change', () => {
-    micDeviceNote.classList.toggle('hidden', !micSelect.value);
+  micSelect.addEventListener('change', updateMicNoteAndAvailability);
+  document.querySelectorAll('input[name="mode"]').forEach((el) => {
+    el.addEventListener('change', updateMicNoteAndAvailability);
   });
+
+  function updateMicNoteAndAvailability() {
+    const currentMode = document.querySelector('input[name="mode"]:checked').value;
+    if (currentMode === 'live') {
+      micSelect.disabled = true;
+      micDeviceNote.textContent = 'Disabled: not used in "Live transcript only" mode. The Web Speech API always listens on your OS default microphone, so this selection has no effect unless you also record.';
+      micDeviceNote.classList.remove('hidden');
+    } else {
+      micSelect.disabled = false;
+      if (currentMode === 'both' && micSelect.value) {
+        micDeviceNote.textContent = '⚠ Live transcript still uses your OS default microphone regardless of this selection — only the recorded files will use the device chosen here.';
+        micDeviceNote.classList.remove('hidden');
+      } else {
+        micDeviceNote.classList.add('hidden');
+      }
+    }
+  }
   copyBtn.addEventListener('click', copyTranscript);
   saveTxtBtn.addEventListener('click', saveTranscriptTxt);
   clearTranscriptBtn.addEventListener('click', () => {
@@ -539,6 +557,7 @@
   refreshMicList();
   renderFileList();
   syncUiToState();
+  updateMicNoteAndAvailability();
   if (!recordingSupported) {
     document.querySelector('input[name="mode"][value="record"]').disabled = true;
     document.querySelector('input[name="mode"][value="both"]').disabled = true;
