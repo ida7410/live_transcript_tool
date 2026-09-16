@@ -57,14 +57,27 @@ Then open the printed URL (e.g. `http://localhost:8080`) in Chrome or Edge.
 
 1. Confirm you're on real Chrome or Edge (see above) and check the address
    bar for a blocked microphone icon.
-2. Click Start, then watch the **"Mic input" meter** in the Controls panel
-   while you speak. If it moves, the browser is receiving audio — the
-   problem is the speech service (check your internet connection, or a
-   banner should appear after a few seconds of silence with more detail).
-   If it never moves, the wrong microphone is likely selected, or the OS
-   is blocking mic access for the browser — check the Microphone dropdown
-   and your system's privacy/sound settings.
-3. Any failure is now also surfaced as a banner message at the top of the
+2. Click Start, then watch the **"Mic input" meter and glowing dot** in the
+   Controls panel while you speak.
+   - If it **never** lights up, the browser isn't receiving any audio at
+     all — check the Microphone dropdown and your OS's privacy/sound
+     settings, or that the mic is muted/unplugged.
+   - If it **does** light up but the transcript still shows "listening (no
+     speech detected yet)": the Web Speech API used for live transcription
+     has **no way to target a specific input device** — it always listens
+     on whatever your **operating system's default microphone** is,
+     completely ignoring the Microphone dropdown in this app (that
+     dropdown only controls which device gets *recorded*). If the mic
+     you're actually speaking into isn't your OS default input device,
+     live transcript will hear silence even though the meter reacts fine.
+     Fix it by making your mic the system default:
+     - **Windows**: Settings → System → Sound → Input → set your mic as default
+     - **macOS**: System Settings → Sound → Input → select your mic
+     - **Linux**: e.g. `pavucontrol` → Input Devices, or your desktop's
+       Sound settings
+     Once that's done, live transcript should pick it up (the dropdown
+     can stay on "Default microphone" at that point, since it'll now match).
+3. Any other failure is surfaced as a banner message at the top of the
    page (blocked permission, no mic found, network error, etc.) instead of
    failing silently.
 
