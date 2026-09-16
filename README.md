@@ -7,10 +7,9 @@ copy them.
 
 ## Features
 
-1. **Live transcript (English only)** — real-time speech-to-text, with two
-   selectable engines (see below): the browser's built-in Web Speech API,
-   or a local, in-browser AI model (Vosk) that can listen through whichever
-   microphone you pick.
+1. **Live transcript (English only)** — real-time speech-to-text using the
+   browser's built-in Web Speech API, with automatic restart so long
+   sessions keep transcribing.
 2. **Auto-split recording** — records microphone audio and automatically
    cuts it into separate files at a configurable interval (1–30 minutes, or
    manually via "Split file now"), so you can hand the resulting files to an
@@ -34,13 +33,11 @@ python3 -m http.server 8080
 
 Then open the printed URL (e.g. `http://localhost:8080`) in Chrome or Edge.
 
-## Live transcript engines
+## Browser support
 
-Pick the engine in Settings → "Live transcript engine":
-
-- **Browser built-in** (default) — uses the Web Speech API
-  (`SpeechRecognition`). Fast and quite accurate, but comes with two hard
-  platform limitations that no amount of app-side code can work around:
+- **Live transcription** uses the Web Speech API (`SpeechRecognition`) and
+  comes with two hard platform limitations that no amount of app-side code
+  can work around:
   - It only works in **official Google Chrome or Microsoft Edge** — under
     the hood it streams audio to a cloud speech service tied to a
     proprietary API key baked into those specific builds. Open-source
@@ -49,30 +46,13 @@ Pick the engine in Settings → "Live transcript engine":
     Safari don't support the API at all.
   - It **always listens on your OS's default microphone** and gives web
     pages no way to target a different device — so the Microphone dropdown
-    in this app is disabled while this engine is selected in "Live
-    transcript only" mode, since it would have no effect.
+    in this app is disabled in "Live transcript only" mode, since it would
+    have no effect there.
   - Because it depends on that cloud service, it also **requires an active
     internet connection**, even though the page itself is fully local.
-- **Local AI model (beta)** — runs [Vosk](https://alphacephei.com/vosk/)
-  entirely inside your browser via WebAssembly (bundled as
-  `vendor/vosk.js`), processing audio from whichever mic you pick in the
-  dropdown — including in "Live transcript only" mode. Trade-offs:
-  - The first time you click Start with this engine, it downloads a speech
-    model (~40MB, English) from the URL in Settings → Advanced → "local AI
-    model URL"; after that it's cached by the browser and runs fully
-    offline. This needs an internet connection *once*.
-  - Noticeably less accurate than the browser's built-in engine, and adds
-    a short delay before each phrase is finalized.
-  - The default model URL points at a third-party demo host
-    (`ccoreilly.github.io`). If it's slow, blocked on your network, or
-    goes offline, host your own copy of a Vosk model (packaged as
-    `.tar.gz`, see [vosk-browser's model
-    docs](https://github.com/ccoreilly/vosk-browser)) and paste its URL
-    into that same field.
-
-In either case, **recording** uses the Web Audio API plus a bundled MP3
-encoder (`vendor/lame.min.js`) and works in all modern browsers, fully
-offline, using whichever mic you pick in the dropdown.
+- **Recording** uses the Web Audio API plus a bundled MP3 encoder
+  (`vendor/lame.min.js`) and works in all modern browsers, fully offline,
+  using whichever mic you pick in the dropdown.
 
 The app must be served over `https://` (or `http://localhost`) for
 microphone access to be granted — opening `index.html` directly via
@@ -86,11 +66,11 @@ microphone access to be granted — opening `index.html` directly via
      all — check the Microphone dropdown and your OS's privacy/sound
      settings, or that the mic is muted/unplugged.
    - If it **does** light up but the transcript still shows "listening (no
-     speech detected yet)" and you're using the **browser built-in**
-     engine: the mic it's actually listening to isn't the one you're
-     speaking into (see the hard limitation above). There are **three
-     independent places** a "default" microphone gets decided, and any one
-     of them can be the culprit — check all three, not just one:
+     speech detected yet)": the mic Chrome is actually listening to isn't
+     the one you're speaking into (see the hard limitation above). There
+     are **three independent places** a "default" microphone gets decided,
+     and any one of them can be the culprit — check all three, not just
+     one:
      1. **Chrome's own mic setting**, separate from the OS entirely:
         `chrome://settings/content/microphone` (or click the icon left of
         the address bar → Microphone). Chrome can have its own default
@@ -102,16 +82,14 @@ microphone access to be granted — opening `index.html` directly via
         Recording tab → right-click a device → "Set as Default Device" /
         "Set as Default Communication Device"). macOS: System Settings →
         Sound → Input. Linux: e.g. `pavucontrol` → Input Devices.
-     3. As a fallback that sidesteps all of the above, switch the engine
-        to **Local AI model**, which listens through whichever device is
-        explicitly picked in this app's own Microphone dropdown, ignoring
-        every OS/Chrome-level "default" setting.
-   - Also confirm you're on real Chrome or Edge if using the built-in
-     engine (see above), and check the address bar for a blocked
-     microphone icon.
+     3. Check all three roles/settings above, not just one — they can
+        disagree with each other, and Chrome's own setting in particular
+        is easy to miss since it's separate from anything in the OS.
+   - Also confirm you're on real Chrome or Edge, and check the address bar
+     for a blocked microphone icon.
 2. Any other failure is surfaced as a banner message at the top of the
-   page (blocked permission, no mic found, network error, model failed to
-   download, etc.) instead of failing silently.
+   page (blocked permission, no mic found, network error, etc.) instead of
+   failing silently.
 
 ## Deployment
 
@@ -134,7 +112,3 @@ of JSZip (`vendor/jszip.min.js`, MIT).
 - `vendor/lame.min.js` — LAME MP3 encoder (via `lamejs`), LGPL. See
   `vendor/LAME-LICENSE.txt`.
 - `vendor/jszip.min.js` — JSZip, MIT.
-- `vendor/vosk.js` — [vosk-browser](https://github.com/ccoreilly/vosk-browser),
-  Apache-2.0, a WebAssembly build of [Vosk](https://alphacephei.com/vosk/).
-  The speech model it loads at runtime (not included in this repo, fetched
-  from the URL in Settings) is also Apache-2.0.

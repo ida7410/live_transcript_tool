@@ -27,9 +27,6 @@
   const micMeterFill = $('micMeterFill');
   const voiceDot = $('voiceDot');
   const micMeterEl = document.querySelector('.mic-meter');
-  const liveEngineSelect = $('liveEngine');
-  const engineNote = $('engineNote');
-  const voskModelUrlInput = $('voskModelUrl');
 
   const VOICE_THRESHOLD = 0.15;
   const VOICE_HOLD_MS = 250;
@@ -38,17 +35,12 @@
   const speechSupported = !!SpeechRecognitionImpl;
   const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
   const recordingSupported = !!(navigator.mediaDevices && AudioContextImpl && typeof lamejs !== 'undefined');
-  const voskSupported = typeof Vosk !== 'undefined' && typeof Worker !== 'undefined' && !!AudioContextImpl;
-  const liveTranscriptSupported = speechSupported || voskSupported;
 
-  if (!liveTranscriptSupported && !recordingSupported) {
-    unsupportedBanner.textContent = 'This browser supports neither live transcription nor audio recording. Please use a recent Chrome, Edge, or Firefox.';
+  if (!speechSupported && !recordingSupported) {
+    unsupportedBanner.textContent = 'This browser supports neither live transcription nor audio recording. Please use a recent Chrome or Edge.';
     unsupportedBanner.classList.remove('hidden');
-  } else if (!liveTranscriptSupported) {
-    unsupportedBanner.textContent = 'Live transcription is not supported in this browser (no speech engine and no WebAssembly worker support). Recording will still work.';
-    unsupportedBanner.classList.remove('hidden');
-  } else if (!recordingSupported) {
-    unsupportedBanner.textContent = 'Audio recording is not supported in this browser. Live transcription will still work.';
+  } else if (!speechSupported) {
+    unsupportedBanner.textContent = 'Live transcription (Web Speech API) is not supported in this browser. Recording will still work. Try Chrome or Edge for live transcript.';
     unsupportedBanner.classList.remove('hidden');
   }
 
@@ -58,14 +50,6 @@
   let recognitionShouldRun = false;
   let sessionStartTime = null;
   let noSpeechStreak = 0;
-  let isLiveActive = false;
-  let activeLiveEngine = null; // 'native' | 'vosk' | null
-
-  let voskModelPromise = null;
-  let voskRecognizer = null;
-  let voskProcessorNode = null;
-  let voskSilentGain = null;
-  let voskStopRequested = false;
 
   let mediaStream = null;
   let audioCtx = null;
@@ -130,26 +114,7 @@
     transcriptArea.scrollTop = transcriptArea.scrollHeight;
   }
 
-  // ---------- Live transcript: engine dispatch ----------
-  async function startLive() {
-    activeLiveEngine = liveEngineSelect.value === 'vosk' ? 'vosk' : 'native';
-    if (activeLiveEngine === 'vosk') {
-      await startVoskLive();
-    } else {
-      startNativeLive();
-    }
-  }
-
-  function stopLive() {
-    if (activeLiveEngine === 'vosk') {
-      stopVoskLive();
-    } else {
-      stopNativeLive();
-    }
-    activeLiveEngine = null;
-  }
-
-  // ---------- Native engine: Web Speech API (Chrome/Edge, OS default mic only) ----------
+  // ---------- Speech recognition (live transcript) ----------
   function createRecognition() {
     const rec = new SpeechRecognitionImpl();
     rec.lang = 'en-US';
@@ -175,13 +140,11 @@
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         showBanner('Microphone access was blocked for live transcription. Allow microphone access in your browser (check the icon in the address bar) and click Start again.');
         recognitionShouldRun = false;
-        isLiveActive = false;
         setStatus(liveStatus, false, 'Live: mic blocked');
         syncUiToState();
       } else if (event.error === 'audio-capture') {
         showBanner('No microphone was found for live transcription. Check that a mic is connected and selected in Settings, then try again.');
         recognitionShouldRun = false;
-        isLiveActive = false;
         setStatus(liveStatus, false, 'Live: no mic');
         syncUiToState();
       } else if (event.error === 'network') {
@@ -205,7 +168,6 @@
       if (recognitionShouldRun) {
         try { rec.start(); } catch (e) { /* already starting */ }
       } else {
-        isLiveActive = false;
         setStatus(liveStatus, false, 'Live: idle');
       }
     };
@@ -213,11 +175,10 @@
     return rec;
   }
 
-  function startNativeLive() {
+  function startLive() {
     if (!speechSupported) return;
     noSpeechStreak = 0;
     recognitionShouldRun = true;
-    isLiveActive = true;
     recognition = createRecognition();
     try {
       recognition.start();
@@ -226,118 +187,16 @@
       console.error(e);
       showBanner(`Could not start live transcription (${e.message || e.name || 'unknown error'}). Try clicking Start again.`);
       recognitionShouldRun = false;
-      isLiveActive = false;
       setStatus(liveStatus, false, 'Live: failed to start');
       syncUiToState();
     }
   }
 
-  function stopNativeLive() {
+  function stopLive() {
     recognitionShouldRun = false;
-    isLiveActive = false;
     interimIndicator.textContent = '';
     if (recognition) {
       try { recognition.stop(); } catch (e) { /* noop */ }
-    }
-    setStatus(liveStatus, false, 'Live: idle');
-  }
-
-  // ---------- Local AI engine: Vosk (WASM, runs on our own selected mic stream) ----------
-  const VOSK_MODEL_LOAD_TIMEOUT_MS = 90000;
-
-  function timeoutRejection(ms, message) {
-    return new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms));
-  }
-
-  function getVoskModel() {
-    if (!voskModelPromise) {
-      const url = (voskModelUrlInput.value || '').trim();
-      if (!url) return Promise.reject(new Error('No model URL set in Advanced settings'));
-      voskModelPromise = Vosk.createModel(url).catch((err) => {
-        voskModelPromise = null; // allow retrying with a fixed URL next time
-        throw err;
-      });
-    }
-    return voskModelPromise;
-  }
-
-  async function startVoskLive() {
-    if (!voskSupported || !sourceNode || !audioCtx) {
-      showBanner('Local AI transcription needs microphone access. Allow microphone access and try again.');
-      isLiveActive = false;
-      syncUiToState();
-      return;
-    }
-    voskStopRequested = false;
-    isLiveActive = true;
-    setStatus(liveStatus, true, 'Live: downloading speech model (first time only)…');
-    syncUiToState();
-
-    try {
-      // The model loader can hang forever (no reject) if the fetch fails deep
-      // inside its worker, so race it against our own timeout as a backstop.
-      const model = await Promise.race([
-        getVoskModel(),
-        timeoutRejection(VOSK_MODEL_LOAD_TIMEOUT_MS, 'Timed out waiting for the speech model to download. Check your connection, or set a different model URL under Advanced settings.'),
-      ]);
-      if (voskStopRequested) {
-        isLiveActive = false;
-        setStatus(liveStatus, false, 'Live: idle');
-        return;
-      }
-
-      const recognizer = new model.KaldiRecognizer(audioCtx.sampleRate);
-      voskRecognizer = recognizer;
-
-      recognizer.on('result', (message) => {
-        if (message.result && message.result.text) {
-          appendTranscriptLine(message.result.text);
-        }
-        interimIndicator.textContent = '';
-      });
-      recognizer.on('partialresult', (message) => {
-        const partial = message.result && message.result.partial;
-        interimIndicator.textContent = partial ? `listening: "${partial}"` : '';
-      });
-      recognizer.on('error', (message) => {
-        showBanner(`Local AI transcription error: ${message.error}`);
-      });
-
-      voskSilentGain = audioCtx.createGain();
-      voskSilentGain.gain.value = 0;
-      voskProcessorNode = audioCtx.createScriptProcessor(4096, 1, 1);
-      sourceNode.connect(voskProcessorNode);
-      voskProcessorNode.connect(voskSilentGain);
-      voskSilentGain.connect(audioCtx.destination);
-      voskProcessorNode.onaudioprocess = (e) => {
-        if (!voskRecognizer) return;
-        try { voskRecognizer.acceptWaveform(e.inputBuffer); } catch (err) { console.error(err); }
-      };
-
-      setStatus(liveStatus, true, 'Live: listening (local AI)');
-    } catch (err) {
-      console.error(err);
-      isLiveActive = false;
-      voskModelPromise = null; // the hung/failed load can't be reused; force a fresh attempt next time
-      showBanner(err && err.message ? err.message : 'Could not load the local AI speech model. Check your connection, or set a different model URL under Advanced settings.');
-      setStatus(liveStatus, false, 'Live: model failed to load');
-    }
-    syncUiToState();
-  }
-
-  function stopVoskLive() {
-    voskStopRequested = true;
-    isLiveActive = false;
-    interimIndicator.textContent = '';
-    if (voskProcessorNode) {
-      voskProcessorNode.onaudioprocess = null;
-      try { voskProcessorNode.disconnect(); } catch (e) {}
-      voskProcessorNode = null;
-    }
-    if (voskSilentGain) { try { voskSilentGain.disconnect(); } catch (e) {} voskSilentGain = null; }
-    if (voskRecognizer) {
-      try { voskRecognizer.remove(); } catch (e) {}
-      voskRecognizer = null;
     }
     setStatus(liveStatus, false, 'Live: idle');
   }
@@ -590,34 +449,29 @@
 
   // ---------- Start / Stop orchestration ----------
   function syncUiToState() {
-    const running = isLiveActive || isRecordingActive;
+    const running = recognitionShouldRun || isRecordingActive;
     startBtn.disabled = running;
     stopBtn.disabled = !running;
     document.querySelectorAll('input[name="mode"]').forEach((el) => { el.disabled = running; });
-    liveEngineSelect.disabled = running;
   }
 
   async function handleStart() {
     mode = document.querySelector('input[name="mode"]:checked').value;
-    const engine = liveEngineSelect.value;
     sessionStartTime = Date.now();
     hideBanner();
     try {
       try {
         await acquireStream();
       } catch (streamErr) {
-        const needsOwnStream = mode === 'record' || mode === 'both' || (mode === 'live' && engine === 'vosk');
-        if (needsOwnStream) throw streamErr;
-        console.warn('Mic level meter unavailable (native live transcript can still work):', streamErr);
+        if (mode === 'record' || mode === 'both') throw streamErr;
+        console.warn('Mic level meter unavailable (live transcript can still work):', streamErr);
       }
 
       if (mode === 'live' || mode === 'both') {
-        if (engine === 'vosk' && !voskSupported) {
-          alert('Local AI transcription is not supported in this browser.');
-        } else if (engine === 'native' && !speechSupported) {
-          alert('Live transcription is not supported in this browser. Try Chrome/Edge, or switch the Live transcript engine to "Local AI model".');
+        if (!speechSupported) {
+          alert('Live transcription is not supported in this browser. Try Chrome or Edge.');
         } else {
-          await startLive();
+          startLive();
         }
       }
       if (mode === 'record' || mode === 'both') {
@@ -659,31 +513,17 @@
   document.querySelectorAll('input[name="mode"]').forEach((el) => {
     el.addEventListener('change', updateMicNoteAndAvailability);
   });
-  liveEngineSelect.addEventListener('change', () => {
-    updateEngineNote();
-    updateMicNoteAndAvailability();
-  });
-
-  function updateEngineNote() {
-    if (liveEngineSelect.value === 'vosk') {
-      engineNote.textContent = 'First use downloads a ~40MB speech model (needs internet once); after that it runs fully offline in your browser. Expect lower accuracy and a short delay per phrase compared to the browser built-in engine.';
-      engineNote.classList.remove('hidden');
-    } else {
-      engineNote.classList.add('hidden');
-    }
-  }
 
   function updateMicNoteAndAvailability() {
     const currentMode = document.querySelector('input[name="mode"]:checked').value;
-    const liveUsesOwnMic = liveEngineSelect.value === 'vosk';
-    if (currentMode === 'live' && !liveUsesOwnMic) {
+    if (currentMode === 'live') {
       micSelect.disabled = true;
-      micDeviceNote.textContent = 'Disabled: not used in "Live transcript only" mode with the browser built-in engine (it always listens on your OS default microphone). Switch the engine above to "Local AI model" to pick a specific mic for live transcript.';
+      micDeviceNote.textContent = 'Disabled: not used in "Live transcript only" mode. The Web Speech API always listens on your OS default microphone, so this selection has no effect unless you also record.';
       micDeviceNote.classList.remove('hidden');
     } else {
       micSelect.disabled = false;
-      if (currentMode === 'both' && !liveUsesOwnMic && micSelect.value) {
-        micDeviceNote.textContent = '⚠ Live transcript (browser built-in engine) still uses your OS default microphone regardless of this selection — only the recorded files will use the device chosen here.';
+      if (currentMode === 'both' && micSelect.value) {
+        micDeviceNote.textContent = '⚠ Live transcript still uses your OS default microphone regardless of this selection — only the recorded files will use the device chosen here.';
         micDeviceNote.classList.remove('hidden');
       } else {
         micDeviceNote.classList.add('hidden');
@@ -707,7 +547,7 @@
   }
 
   window.addEventListener('beforeunload', (e) => {
-    if (isLiveActive || isRecordingActive) {
+    if (recognitionShouldRun || isRecordingActive) {
       e.preventDefault();
       e.returnValue = '';
     }
@@ -717,24 +557,13 @@
   refreshMicList();
   renderFileList();
   syncUiToState();
-  updateEngineNote();
   updateMicNoteAndAvailability();
   if (!recordingSupported) {
     document.querySelector('input[name="mode"][value="record"]').disabled = true;
     document.querySelector('input[name="mode"][value="both"]').disabled = true;
   }
   if (!speechSupported) {
-    const nativeOption = liveEngineSelect.querySelector('option[value="native"]');
-    if (nativeOption) nativeOption.disabled = true;
-    if (voskSupported) {
-      liveEngineSelect.value = 'vosk';
-      updateEngineNote();
-      updateMicNoteAndAvailability();
-    } else {
-      document.querySelector('input[name="mode"][value="live"]').disabled = true;
-      if (document.querySelector('input[name="mode"]:checked').value === 'live') {
-        document.querySelector('input[name="mode"][value="record"]').checked = true;
-      }
-    }
+    document.querySelector('input[name="mode"][value="live"]').checked = false;
+    document.querySelector('input[name="mode"][value="record"]').checked = true;
   }
 })();

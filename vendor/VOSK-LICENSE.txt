@@ -1,5 +1,0 @@
-vosk-browser is licensed under the Apache License 2.0.
-See https://github.com/ccoreilly/vosk-browser for source and license text.
-The bundled speech model (fetched separately at runtime, not included in this repo)
-is the Vosk small English model, licensed Apache 2.0 by Alpha Cephei:
-https://alphacephei.com/vosk/models

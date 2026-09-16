@@ -51,23 +51,6 @@
         <summary>Settings</summary>
 
         <div class="field">
-          <label for="liveEngine">Live transcript engine</label>
-          <select id="liveEngine">
-            <option value="native" selected>Browser built-in (fast, accurate — only hears your OS default mic)</option>
-            <option value="vosk">Local AI model (beta — hears whichever mic you pick, ~40MB one-time download, less accurate)</option>
-          </select>
-          <p class="field-note hidden" id="engineNote"></p>
-        </div>
-
-        <details class="nested-settings">
-          <summary>Advanced: local AI model URL</summary>
-          <div class="field">
-            <input type="text" id="voskModelUrl" value="https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz">
-            <p class="field-note">Only used by the "Local AI model" engine. Points to a Vosk model packaged as a .tar.gz. The default is a third-party demo host — if it's slow, blocked, or goes offline, host your own copy of a Vosk model and paste its URL here.</p>
-          </div>
-        </details>
-
-        <div class="field">
           <label for="micSelect">Microphone</label>
           <div class="inline-field">
             <select id="micSelect"><option value="">Default microphone</option></select>
@@ -132,7 +115,6 @@
 
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/lame.min.js"></script>
-<script src="vendor/vosk.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
